@@ -1,187 +1,315 @@
 <?php require_once("functions.php"); ?>
 <?php require_once("connection.php"); ?>
+<?php require_once("session.php"); ?>
+
 <?php
+// ---------------------------
+// Config
+// ---------------------------
+$api_key = getenv('OPENAI_API_KEY') ?: 'XYZ'; // set real key in hosting panel
+$openai_endpoint = 'https://api.openai.com/v1/chat/completions';
+$openai_model_primary = 'gpt-4o-mini';     // try this first
+$openai_model_fallback = 'gpt-3.5-turbo';  // fallback if primary is unavailable
+$openai_timeout = 20;                      // seconds
+$openai_max_retries = 3;
 
-$_SESSION['tokenTest']='';
-//couplet submission 
-# request sent using HTTP_X_REQUESTED_WITH
-if( isset( $_SERVER['HTTP_X_REQUESTED_WITH'] ) ){
+// ---------------------------
+// Session defaults
+// ---------------------------
+$_SESSION['tokenTest']     = '';
+$_SESSION['authorName']    = '';
+$_SESSION['authorEmail']   = '';
+$_SESSION['authorLineOne'] = '';
+$_SESSION['authorLineTwo'] = '';
 
- 
-   
-	if (isset($_POST['authorName']) && isset($_POST['authorEmail']) && isset($_POST['line1']) && isset($_POST['line2']) && isset($_POST['tnc'])) {
-		
-		//echo 'Thanks';
-		$authorName = null;
-		$authorEmail = null;
-		$line1 = null;
-		$line2 = null;
-		$token = 0;
-		
-		if(isset($_POST['authorName']))
-		$authorName = $_POST['authorName'];
-		if(isset($_POST['authorEmail']))
-		$authorEmail = strtolower($_POST['authorEmail']);
-		if(isset($_POST['line1']))
-		$line1 = $_POST['line1'];
-		if(isset($_POST['line2']))
-		$line2 = $_POST['line2'];
-		if(isset($_POST['tnc'])) 
-		$tnc = $_POST['tnc'];
-		
-		if($authorName!='' && $authorEmail!='' && $line1!='' && $line2!='' &&  $tnc == 'YES')
-		$flag = true;
-	else
-		$flag = false;
-		
-	if($flag){
-	//success
-	//$_SESSION['$msg'] = 'Success';
-	
-	// 1. check Email is exists in users table
-	//if(checkTokenEmail($authorEmail)){
-	if(false){
-	
-	// 2.1 already exists
-	
-	$authorName = ucfirst($authorName);
-	
-	
-	
-	
-	echo "<h1 class=\"text-center\">Dear {$authorName}, Welcome back.</h1>
-	<p>Please use the token that you have already received in your mailbox, to complete your submission:</p>
-	
-	<form class=\"\" id=\"tokenForm\" action=\"includes/tokenFormProcessor.php\" method=\"POST\" style=\"color:#333;\">
-              
-                <input type=\"hidden\" name=\"authorNameToken\" value=\"{$authorName}\"/>
-                
-				 <input type=\"hidden\" name=\"authorEmailToken\" value=\"{$authorEmail}\"/>
-                
-				<input type=\"hidden\" name=\"line1Token\" value=\"{$line1}\"/>
-                
-				<input type=\"hidden\" name=\"line2Token\" value=\"{$line2}\"/>
-				
-				<label for=\"tokenNumber\" class=\"control-label\">Please enter the token we emailed to you</label>
-				<input type=\"text\" name=\"tokenNumber\" class=\"form-control\" placeholder=\"e.g. 1234\" required maxlength=\"4\" size=\"4\" />
-               <div class=\"footer-text\">
-			   <br/>
-	<input type=\"submit\" value=\"Proceed\" name=\"submitToken\" id=\"submitToken\" class=\"btn btn-green\"/>
-	</div>
-			 </form>
-			 <div class=\"col-md-offset-2 col-md-8 col-lg-offset-2 col-lg-8\">
-		<div class=\"tokenOutput\"></div>
-	</div>";
-	/*echo "<script type='text/javascript'> $('#testLink').click(function(){ $('#tokenForm').addClass(\"visible\").removeClass(\"hidden\"); }); 
-	console.log(\"Testing\");
-	</script>";
-	*/
-	// 3. Validate user-entered Token
-	
-	
-	
-	
-	
-	}else{
-	
-	// 2.2 New user Journey
-	
-	// 2.2.1 generate random Token
-	//$token = generateToken();
-	$token = 16;
-
-	// 2.2.2 store email-token in Users Table
-	insertIntoUsersTb($authorEmail,$token);
-	
-	// 2.2.3 Email token to user email
-	//sendEmailToken($authorName,$authorEmail,$token);
-	$authorName = ucfirst($authorName);
-	echo "
-	
-	<h1 class=\"text-center\">Hello {$authorName}, Welcome to Last2Lines</h1>
-	<p class=\"text-center\">Just to prove that you are not a robot, please answer this simple question:</p>
-	<form class=\"col-md-offset-2 col-md-8 col-lg-offset-2 col-lg-8 text-center\" id=\"tokenForm\" action=\"includes/tokenFormProcessor.php\" method=\"POST\" style=\"color:#333;\">
-              
-                <input type=\"hidden\" name=\"authorNameToken\" value=\"{$authorName}\"/>
-                 
-				 <input type=\"hidden\" name=\"authorEmailToken\" value=\"{$authorEmail}\"/>
-                
-				<input type=\"hidden\" name=\"line1Token\" value=\"{$line1}\"/>
-                
-				<input type=\"hidden\" name=\"line2Token\" value=\"{$line2}\"/>
-				<h4>What is 10+6 ?</h4>
-				<label for=\"tokenNumber\" class=\"control-label\">Please enter your answer here:</label>
-				<input type=\"text\" name=\"tokenNumber\" class=\"form-control\" placeholder=\"e.g. 12\" required size=\"4\" />
-               <div class=\"footer-text\">
-			   <br/>
-	<input type=\"submit\" value=\"Proceed\" name=\"submitToken\" id=\"submitToken\" class=\"btn btn-green\"/>
-	</div>
-			 </form>
-			 <div class=\"col-md-offset-2 col-md-8 col-lg-offset-2 col-lg-8\">
-		<div class=\"tokenOutput\"></div>
-	</div>";
-	// 3. Validate user-entered Token
-	
-	
-	
-	}
-	
-	
-	
-	
-	}else{
-	//error
-	//$_SESSION['$msg'] = 'Error';
-	echo '<h4 class=\"text-warning\"><i class="fa fa-exclamation-circle" aria-hidden="true"></i> All fields are required</h4>';
-	}
-}else{
-		echo '<h4 class=\"text-warning\"><i class="fa fa-exclamation-circle" aria-hidden="true"></i> All fields are required</h4>';
-	}
-	return;
-
+// ---------------------------
+// Helpers
+// ---------------------------
+function sanitize_line($s) {
+    $s = trim((string)$s);
+    $s = preg_replace('/\s+/u', ' ', $s);
+    return $s;
 }
-//couplet submission 
- 
 
 /**
-if(isset($_POST['newUsersubmit'])){
-	
-	$authorName = null;
-	$authorEmail = null;
-	$line1 = null;
-	$line2 = null;
-	$token = 0;
-	$flag = false;
-	
-	if(isset($_POST['authorName']))
-	$authorName = $_POST['authorName'];
-	if(isset($_POST['authorEmail']))
-	$authorEmail = $_POST['authorEmail'];
-	if(isset($_POST['authorName']))
-	$line1 = $_POST['line1'];
-	if(isset($_POST['line2']))
-	$line2 = $_POST['line2'];
-	
-	if($authorName != null && $authorEmail != null &&$line1 != null && $line2 != null)
-		$flag = true;
-	else
-		$flag = false;
-		
-	
-	
-if($flag){
-	//success
-	//$_SESSION['$msg'] = 'Success';
-	
-	//generate random Token
-	$token = generateToken();
-	
-}else{
-	//error
-	//$_SESSION['$msg'] = 'Error';
-	}
-}
-**/
-//couplet submission
+ * Robust OpenAI call with cURL, retries, backoff, Retry-After support.
+ */
+function call_openai_chat($endpoint, $api_key, $model, $messages, $timeout = 20, $max_retries = 3) {
+    $payload = array(
+        'model' => $model,
+        'temperature' => 0.1,
+        'max_tokens' => 60,
+        'n' => 1,
+        'messages' => $messages,
+    );
 
+    $attempt = 0;
+    $backoff = 2; // seconds
+    $lastErr = null;
+
+    while ($attempt < $max_retries) {
+        $attempt++;
+
+        $raw_headers = array();
+        $header_fn = function ($ch, $header_line) use (&$raw_headers) {
+            $len = strlen($header_line);
+            $parts = explode(':', $header_line, 2);
+            if (count($parts) == 2) {
+                $raw_headers[strtolower(trim($parts[0]))] = trim($parts[1]);
+            }
+            return $len;
+        };
+
+        $ch = curl_init($endpoint);
+        curl_setopt_array($ch, array(
+            CURLOPT_POST => true,
+            CURLOPT_HTTPHEADER => array(
+                'Content-Type: application/json',
+                'Authorization: Bearer ' . $api_key,
+            ),
+            CURLOPT_POSTFIELDS => json_encode($payload, JSON_UNESCAPED_UNICODE),
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT => $timeout,
+            CURLOPT_CONNECTTIMEOUT => 10,
+            CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+            CURLOPT_HEADERFUNCTION => $header_fn,
+        ));
+
+        $result = curl_exec($ch);
+        $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curl_err  = curl_error($ch);
+        curl_close($ch);
+
+        if ($curl_err) {
+            $lastErr = "cURL error: $curl_err";
+        } else {
+            if ($http_code >= 200 && $http_code < 300) {
+                $decoded = json_decode($result, true);
+                if (json_last_error() === JSON_ERROR_NONE) {
+                    return array(null, $decoded);
+                }
+                $lastErr = 'JSON decode error: ' . json_last_error_msg();
+            } elseif ($http_code == 429 || ($http_code >= 500 && $http_code <= 599)) {
+                // Rate-limit / server error — respect Retry-After if present
+                $retry_after = 0;
+                if (isset($raw_headers['retry-after'])) {
+                    $retry_after = (int)$raw_headers['retry-after'];
+                }
+                $sleep_for = max($retry_after, $backoff);
+                sleep($sleep_for);
+                $backoff = min($backoff * 2, 16);
+                continue;
+            } else {
+                $lastErr = "HTTP $http_code: $result";
+            }
+        }
+
+        if ($attempt < $max_retries) {
+            sleep($backoff);
+            $backoff = min($backoff * 2, 16);
+        }
+    }
+    return array($lastErr ?: 'Unknown error contacting OpenAI', null);
+}
+
+/**
+ * Extract two lines; fall back to user lines if needed.
+ */
+function extract_two_lines($raw, $fallback1, $fallback2) {
+    $text = trim((string)$raw);
+    $text = preg_replace('/^```[a-zA-Z]*\s*|\s*```$/m', '', $text);
+
+    $parts = preg_split('/\r\n|\r|\n/', $text);
+    $clean = array();
+    foreach ($parts as $p) {
+        $p = trim($p);
+        $p = preg_replace('/^\s*(?:\d+\)|[-*•])\s*/', '', $p);
+        if ($p !== '') $clean[] = $p;
+        if (count($clean) >= 2) break;
+    }
+
+    if (count($clean) < 2) {
+        return array(sanitize_line($fallback1), sanitize_line($fallback2));
+    }
+    return array(sanitize_line($clean[0]), sanitize_line($clean[1]));
+}
+
+// ---------------------------
+// Fetch active chapter
+// ---------------------------
+$active_chapter = null;
+$active_chapters = get_active_chapter();
+if ($active_chapters) {
+    foreach ($active_chapters as $ac) { $active_chapter = $ac; }
+}
+$chapter_id   = isset($active_chapter['chapter_id']) ? $active_chapter['chapter_id'] : 0;
+$chapter_name = isset($active_chapter['chapter_name']) ? $active_chapter['chapter_name'] : 'the selected theme';
+
+// ---------------------------
+// Initialize
+// ---------------------------
+$authorName = $authorEmail = $line1 = $line2 = null;
+$token = '';
+$flag = false;
+$lastCoupletLine1 = '';
+$lastCoupletLine2 = '';
+$line1Edited = '';
+$line2Edited = '';
+$existing_lines = array();
+$new_lines_to_edit = array();
+$prompts = array();
+
+// ---------------------------
+// Validate POST
+// ---------------------------
+if (
+    isset($_POST['authorNameToken'], $_POST['authorEmailToken'], $_POST['line1Token'], $_POST['line2Token'], $_POST['tokenNumber'])
+) {
+    $authorName  = sanitize_line($_POST['authorNameToken']);
+    $authorEmail = strtolower(trim($_POST['authorEmailToken']));
+    $line1       = sanitize_line($_POST['line1Token']);
+    $line2       = sanitize_line($_POST['line2Token']);
+    $token       = (string)$_POST['tokenNumber'];
+
+    if ($authorName !== '' && $authorEmail !== '' && $line1 !== '' && $line2 !== '' && $token !== '') {
+        $flag = true;
+    }
+
+    if ($flag && (int)$token === 16) {
+        // ---------------------------
+        // Step 3. Last couplet
+        // ---------------------------
+        $lastCoupletFileName = "../lastCouplet" . $chapter_id . ".txt";
+        if (is_readable($lastCoupletFileName)) {
+            $handle = fopen($lastCoupletFileName, "r");
+            if ($handle) {
+                $counter = 1;
+                while (($ln = fgets($handle)) !== false) {
+                    if ($counter === 1) {
+                        $lastCoupletLine1 = sanitize_line($ln);
+                    } elseif ($counter === 2) {
+                        $lastCoupletLine2 = sanitize_line($ln);
+                    } else {
+                        break;
+                    }
+                    $counter++;
+                }
+                fclose($handle);
+            }
+        }
+        $existing_lines = array();
+        if ($lastCoupletLine1 !== '') $existing_lines[] = $lastCoupletLine1;
+        if ($lastCoupletLine2 !== '') $existing_lines[] = $lastCoupletLine2;
+        if (count($existing_lines) < 2) $existing_lines = array(); // don't force rhyme if missing
+
+        $new_lines_to_edit = array($line1, $line2);
+
+        // ---------------------------
+        // Step 4. AI editing (with safe fallbacks)
+        // ---------------------------
+        $prompts = array();
+
+        $prompt1Content = "Write two lines of poetry on the theme \"{$chapter_name}\" by editing these two lines:\n" . implode("\n", $new_lines_to_edit) . "\n";
+        $prompts[] = array('role' => 'user', 'content' => $prompt1Content);
+
+        if (!empty($existing_lines)) {
+            $prompt2Content = "Make the two edited lines rhyme naturally with these two lines:\n" . implode("\n", $existing_lines) . "\n";
+            $prompts[] = array('role' => 'user', 'content' => $prompt2Content);
+        }
+
+        $prompts[] = array(
+            'role' => 'user',
+            'content' =>
+                "Constraints:\n".
+                "1) Output exactly TWO lines separated by a single newline.\n".
+                "2) Each line should be between 5 and 15 words.\n".
+                "3) If there is any hate speech or harmful content, EDIT it out to be safe and respectful.\n".
+                "Return ONLY the two lines—no extra text."
+        );
+
+        // If API key missing or placeholder, skip calling API
+        $edited = '';
+        if ($api_key && $api_key !== 'XYZ') {
+            // Try primary model
+            list($err, $response) = call_openai_chat($openai_endpoint, $api_key, $openai_model_primary, $prompts, $openai_timeout, $openai_max_retries);
+            if ($err || !$response || empty($response['choices'][0]['message']['content'])) {
+                // Try fallback model once
+                list($err2, $response2) = call_openai_chat($openai_endpoint, $api_key, $openai_model_fallback, $prompts, $openai_timeout, $openai_max_retries);
+                if (!$err2 && $response2 && !empty($response2['choices'][0]['message']['content'])) {
+                    $edited = $response2['choices'][0]['message']['content'];
+                }
+            } else {
+                $edited = $response['choices'][0]['message']['content'];
+            }
+        }
+
+        if ($edited === '') {
+            // Fallback to user-provided lines if moderation fails/rate-limited/no key
+            $line1Edited = $line1;
+            $line2Edited = $line2;
+        } else {
+            list($line1Edited, $line2Edited) = extract_two_lines($edited, $line1, $line2);
+        }
+
+        // ---------------------------
+        // Step 5. DB insert
+        // ---------------------------
+        insertIntoCurrentTb($authorEmail, $authorName, $line1Edited, $line2Edited, $chapter_id);
+
+        // ---------------------------
+        // Step 6/7. Write poem & lastCouplet files
+        // ---------------------------
+        $myPoemFile = "../poem" . $chapter_id . ".txt";
+        if ($fp = @fopen($myPoemFile, 'a')) {
+            fwrite($fp, $line1Edited . PHP_EOL);
+            fwrite($fp, $line2Edited . PHP_EOL);
+            fwrite($fp, $authorName . PHP_EOL);
+            fclose($fp);
+        }
+
+        $myLastCoupletFile = "../lastCouplet" . $chapter_id . ".txt";
+        if ($fp2 = @fopen($myLastCoupletFile, 'w+')) {
+            fwrite($fp2, $line1Edited . PHP_EOL);
+            fwrite($fp2, $line2Edited . PHP_EOL);
+            fwrite($fp2, $authorName . PHP_EOL);
+            fclose($fp2);
+        }
+
+        // ---------------------------
+        // Step 8. Email (best-effort)
+        // ---------------------------
+        @sendEmailToUser($authorEmail, $authorName);
+
+        // ---------------------------
+        // Session + redirect
+        // ---------------------------
+        $_SESSION['tokenTest']     = 'correctToken';
+        $_SESSION['authorName']    = $authorName;
+        $_SESSION['authorEmail']   = $authorEmail;
+        $_SESSION['authorLineOne'] = $line1Edited;
+        $_SESSION['authorLineTwo'] = $line2Edited;
+
+        echo '<script>window.location.href = "../index.php#submittedSection";</script>';
+
+        echo '<div style="text-align:center;">
+                <h1>Thank you for your last two lines.</h1>
+                <p>Congratulations! Your couplet has been published by our AI editor after moderation.</p>
+                <p>Please <a href="https://www.last2lines.com/index.php#submittedSection"><strong>read the full poem</strong></a> to see how your two lines contribute to the cause.</p>
+                <p>Help us spread awareness by sharing this <a href="https://youtu.be/0TlOwAluQj8" target="_blank" rel="noopener">introductory video</a>.</p>
+              </div>';
+
+    } else {
+        // Wrong token
+        $_SESSION['tokenTest']     = 'wrongToken';
+        $_SESSION['authorName']    = $authorName;
+        $_SESSION['authorEmail']   = $authorEmail;
+        $_SESSION['authorLineOne'] = $line1;
+        $_SESSION['authorLineTwo'] = $line2;
+    }
+
+} else {
+    $_SESSION['tokenTest'] = 'noToken';
+}
+
+// redirect_to("../index.php#submittedSection");
 ?>
