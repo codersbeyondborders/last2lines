@@ -1,0 +1,72 @@
+#archivesDropdownMenu .dropdown-menu{
+	
+   background-color: none;
+    border: none !important;
+    -webkit-box-shadow:  none !important;
+    box-shadow:  none !important;
+    background-clip:  none !important;
+	background: none;
+}
+
+#archivesDropdownMenu .dropdown-menu li{
+	
+}
+
+#archivesDropdownMenu .dropdown-menu li a{
+    background: #ec801b !important;
+    margin-top: 5px !important;
+    border-radius: 15px !important;
+}
+
+#archivesDropdownMenu .dropdown-menu li a:hover{
+    background: #fff !important;
+	color: #ec801b !important;
+	font-weight:bold;
+    margin-top: 5px !important;
+    border-radius: 15px !important;
+}
+/*
+@media screen and (max-width: 770px){
+#main_navigation_menu{
+	background: #2a3039 !important;
+}
+#main_navigation_menu li{
+padding:10px;
+border-bottom:1px solid #fff;
+}
+}*/
+
+
+
+.red-triangle {
+  width: 0;
+  height: 0;
+  border-top: 50px solid transparent;
+  border-right: 0px;
+  border-left: 100px solid red;
+  border-bottom: 50px solid transparent;
+}
+
+
+.row{
+    padding: 35px 0;
+}
+
+.currentPoem p{
+    font-size: 18px;
+    line-height: 32px;
+    font-family: fantasy;
+}
+
+h2.currentPoemTitle{
+    font-size: 28px;
+    line-height: 32px;
+    font-family: fantasy;
+    margin-bottom: 10px;
+}
+
+.currentPoem h4{
+    font-size: 16px;
+    line-height: 32px;
+    font-family: arial;
+}
